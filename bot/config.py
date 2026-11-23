@@ -46,6 +46,13 @@ class Settings:
         default_factory=lambda: os.getenv("HUMAN_TRANSFER_NUMBER", "")
     )
 
+    # Proveedor de IA: claude (de pago) | groq | gemini | ollama (gratis)
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "claude").lower())
+    # Para groq / gemini / ollama
+    free_api_key: str = field(default_factory=lambda: os.getenv("FREE_API_KEY", ""))
+    free_model: str = field(default_factory=lambda: os.getenv("FREE_MODEL", ""))
+    free_base_url: str = field(default_factory=lambda: os.getenv("FREE_BASE_URL", ""))
+
     # Claude
     anthropic_model: str = field(
         default_factory=lambda: os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")

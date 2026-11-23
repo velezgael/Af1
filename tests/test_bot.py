@@ -171,3 +171,46 @@ def test_silence_limit(app_client):
     client.post("/twilio/respond", data={"CallSid": "CA3", "SpeechResult": ""})
     r = client.post("/twilio/respond", data={"CallSid": "CA3", "SpeechResult": ""})
     assert "<Hangup" in r.text
+
+
+# ---------- opción gratis (Groq / Gemini / Ollama) ----------
+
+class FakeChat:
+    def __init__(self, texts):
+        self.texts = list(texts)
+        self.calls = []
+        self.completions = self
+
+    def create(self, **kwargs):
+        self.calls.append(copy.deepcopy(kwargs))
+        msg = type("M", (), {"content": self.texts.pop(0)})()
+        return type("R", (), {"choices": [type("C", (), {"message": msg})()]})()
+
+
+def test_free_agent_parses_json_and_history(monkeypatch):
+    import bot.config as config
+    from bot.agent import FreeAgent, greeting, initial_history
+
+    object.__setattr__(config.settings, "llm_provider", "groq")
+    try:
+        fake = FakeChat(['Claro: {"decir": "¿Cómo reciben sus pedidos?", "accion": "continuar", '
+                         '"resultado": "en_curso", "cita": "", "notas": "Contestó el dueño"}'])
+        agent = FreeAgent(config.load_campaign(), client=type("O", (), {"chat": fake})())
+        history = initial_history(greeting(agent.campaign, {"negocio": "Taquería"}))
+        turn, history = agent.next_turn({"negocio": "Taquería"}, history, "Sí, soy el dueño")
+    finally:
+        object.__setattr__(config.settings, "llm_provider", "claude")
+
+    assert turn.decir == "¿Cómo reciben sus pedidos?"
+    sent = fake.calls[0]["messages"]
+    assert sent[0]["role"] == "system" and "JSON" in sent[0]["content"]
+    assert all(isinstance(m["content"], str) for m in sent)
+    assert history[-1]["role"] == "assistant"
+
+
+def test_parse_turn_rejects_garbage():
+    from bot.agent import parse_turn
+
+    assert parse_turn("no es json") is None
+    t = parse_turn('{"decir": "Hola", "accion": "bailar", "resultado": "raro"}')
+    assert t.accion == "continuar" and t.resultado == "en_curso"

@@ -25,12 +25,23 @@ Un bot que **llama por teléfono a negocios y conversa con voz** para presentar 
 - Solo llama en **horario permitido** (lunes a viernes 9:00–19:00, hora de CDMX, configurable).
 - Clasifica cada llamada: `cita_agendada`, `interesado`, `no_interesado`, `volver_a_llamar`, `no_llamar`, `numero_equivocado`, `transferido`.
 
+## 💸 Opción gratis
+
+| Parte | Gratis | Notas |
+|---|---|---|
+| Inteligencia artificial | ✅ **Groq** (recomendado), **Gemini** u **Ollama** | Pon `LLM_PROVIDER=groq` y tu `FREE_API_KEY` en `.env`. Groq y Gemini tienen límites diarios gratuitos; Ollama corre en tu PC. |
+| Probar la conversación por texto | ✅ | `python -m bot simular` |
+| Escuchar al bot en una llamada real | ✅ Prueba gratis de Twilio (crédito inicial, sin tarjeta) | Solo puede llamar a **números verificados**, por ejemplo tu propio celular. |
+| Llamar a negocios reales | ❌ | Hay que pasar Twilio a cuenta de pago (número mensual + costo por minuto). |
+
+Nota: en el plan gratis de Gemini, Google puede usar las conversaciones para mejorar sus productos.
+
 ## Lo que necesitas
 
 1. **Python 3.11 o más nuevo.**
 2. **Cuenta de Twilio** con un número de teléfono que pueda llamar a México → <https://console.twilio.com>
    (en cuentas de prueba solo puedes llamar a números verificados).
-3. **API key de Claude** → <https://console.anthropic.com>
+3. **Clave de IA**: gratis en Groq → <https://console.groq.com/keys> (o Claude, de pago → <https://console.anthropic.com>)
 4. Una **URL pública** para que Twilio llegue a tu computadora. Para pruebas usa [ngrok](https://ngrok.com):
    `ngrok http 8000`.
 

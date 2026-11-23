@@ -112,9 +112,9 @@ def cmd_no_llamar(args: argparse.Namespace) -> None:
 
 def cmd_simular(args: argparse.Namespace) -> None:
     """Conversa con el bot por texto, como si tú fueras el negocio. No hace llamadas reales."""
-    from .agent import SalesAgent, greeting, initial_history
+    from .agent import greeting, initial_history, make_agent
 
-    agent = SalesAgent(load_campaign())
+    agent = make_agent(load_campaign())
     lead = {"negocio": args.negocio, "contacto": args.contacto, "ciudad": "", "notas": ""}
     text = greeting(agent.campaign, lead)
     history = initial_history(text)

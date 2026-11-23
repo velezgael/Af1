@@ -232,3 +232,105 @@ class SalesAgent:
         assistant_content = [b.model_dump(mode="json", exclude_none=True) for b in response.content]
         messages.append({"role": "assistant", "content": assistant_content})
         return turn, messages
+
+
+# ---------------------------------------------------------------------------
+# Opción gratis: proveedores compatibles con la API de OpenAI (Groq, Gemini, Ollama)
+# ---------------------------------------------------------------------------
+
+FREE_PROVIDERS = {
+    # nombre: (URL base, modelo por defecto)
+    "groq": ("https://api.groq.com/openai/v1", "openai/gpt-oss-120b"),
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-2.5-flash"),
+    "ollama": ("http://localhost:11434/v1", "qwen2.5:7b"),
+}
+
+JSON_INSTRUCTIONS = """
+
+Responde ÚNICAMENTE con un objeto JSON válido (sin texto antes ni después) con exactamente estas claves:
+{"decir": "...", "accion": "continuar|colgar|transferir", "resultado": "%s", "cita": "", "notas": "..."}""" % "|".join(RESULTADOS)
+
+
+def _content_text(content: Any) -> str:
+    """Convierte el contenido de un mensaje (texto o lista de bloques) a texto plano."""
+    if isinstance(content, str):
+        return content
+    return "".join(b.get("text", "") for b in content if b.get("type") == "text")
+
+
+def parse_turn(text: str) -> Turn | None:
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not str(data.get("decir", "")).strip():
+        return None
+    accion = data.get("accion") if data.get("accion") in ("continuar", "colgar", "transferir") else "continuar"
+    resultado = data.get("resultado") if data.get("resultado") in RESULTADOS else "en_curso"
+    return Turn(
+        decir=str(data["decir"]).strip(),
+        accion=accion,
+        resultado=resultado,
+        cita=str(data.get("cita") or ""),
+        notas=str(data.get("notas") or ""),
+    )
+
+
+class FreeAgent:
+    """Mismo bot, pero usando un proveedor gratuito (Groq, Gemini u Ollama)."""
+
+    def __init__(self, campaign: dict, client: Any = None):
+        from openai import OpenAI
+
+        provider = settings.llm_provider
+        if provider not in FREE_PROVIDERS:
+            raise ValueError(f"LLM_PROVIDER desconocido: {provider}. Usa claude, groq, gemini u ollama.")
+        base_url, default_model = FREE_PROVIDERS[provider]
+        self.model = settings.free_model or default_model
+        self.campaign = campaign
+        self.client = client or OpenAI(
+            base_url=settings.free_base_url or base_url,
+            api_key=settings.free_api_key or "ollama",  # Ollama no necesita clave
+            timeout=12.0,
+            max_retries=1,
+        )
+        self.system_prompt = build_system_prompt(campaign) + JSON_INSTRUCTIONS
+
+    def next_turn(
+        self, lead: dict[str, Any], history: list[dict[str, Any]], heard: str
+    ) -> tuple[Turn, list[dict[str, Any]]]:
+        heard = heard.strip()
+        user_text = f"Negocio: {heard}" if heard else NO_SPEECH
+        messages = history + [{"role": "user", "content": user_text}]
+        chat = [{"role": "system", "content": self.system_prompt + "\n\n" + build_lead_context(lead)}]
+        chat += [{"role": m["role"], "content": _content_text(m["content"])} for m in messages]
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=chat,
+                response_format={"type": "json_object"},
+                temperature=0.4,
+                max_tokens=1024,
+            )
+            text = response.choices[0].message.content or ""
+        except Exception:  # noqa: BLE001 - cualquier fallo del proveedor: colgar con cortesía
+            log.exception("Error del proveedor gratuito (%s)", settings.llm_provider)
+            return Turn.fallback(), messages
+
+        turn = parse_turn(text)
+        if turn is None:
+            log.warning("No se pudo leer la respuesta del modelo: %r", text[:300])
+            return Turn.fallback(), messages
+        messages.append({"role": "assistant", "content": text})
+        return turn, messages
+
+
+def make_agent(campaign: dict) -> SalesAgent | FreeAgent:
+    """Crea el bot con el proveedor elegido en LLM_PROVIDER."""
+    if settings.llm_provider == "claude":
+        return SalesAgent(campaign)
+    return FreeAgent(campaign)

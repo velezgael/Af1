@@ -11,7 +11,7 @@ from twilio.request_validator import RequestValidator
 from twilio.twiml.voice_response import Gather, VoiceResponse
 
 from . import db
-from .agent import SalesAgent, Turn, greeting, initial_history
+from .agent import FreeAgent, SalesAgent, Turn, greeting, initial_history, make_agent
 from .config import load_campaign, settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -19,13 +19,13 @@ log = logging.getLogger("bot.server")
 
 app = FastAPI(title="Bot de llamadas de ventas")
 
-_agent: SalesAgent | None = None
+_agent: SalesAgent | FreeAgent | None = None
 
 
-def get_agent() -> SalesAgent:
+def get_agent() -> SalesAgent | FreeAgent:
     global _agent
     if _agent is None:
-        _agent = SalesAgent(load_campaign())
+        _agent = make_agent(load_campaign())
     return _agent
 
 
