@@ -110,6 +110,52 @@ def cmd_no_llamar(args: argparse.Namespace) -> None:
     print(f"{telefono} agregado a la lista de no llamar.")
 
 
+def cmd_probar_llamada(args: argparse.Namespace) -> None:
+    """Hace UNA llamada real a un número (por ejemplo tu celular) para escuchar al bot."""
+    telefono = normalize_phone(args.telefono, settings.default_country_code)
+    if not telefono:
+        sys.exit("Teléfono inválido")
+    missing = [n for n in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "PUBLIC_BASE_URL")
+               if not getattr(settings, n.lower())]
+    if missing:
+        sys.exit(f"Faltan variables en .env: {', '.join(missing)}")
+
+    # Verifica que el servidor esté prendido y se pueda ver desde internet
+    import urllib.request
+
+    try:
+        urllib.request.urlopen(f"{settings.public_base_url}/health", timeout=10)
+    except Exception as e:  # noqa: BLE001
+        sys.exit(
+            f"No pude abrir {settings.public_base_url}/health ({e}).\n"
+            "¿Está prendido el servidor (uvicorn) y ngrok? ¿Copiaste bien la URL de ngrok en PUBLIC_BASE_URL?"
+        )
+
+    from twilio.rest import Client
+
+    with db.connect() as conn:
+        lead_id = db.upsert_lead(
+            conn, {"negocio": args.negocio, "telefono": telefono, "contacto": args.contacto, "notas": "Llamada de prueba"}
+        )
+    client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
+    base = settings.public_base_url
+    call = client.calls.create(
+        to=telefono,
+        from_=settings.twilio_from_number,
+        url=f"{base}/twilio/voice?lead_id={lead_id}",
+        method="POST",
+        status_callback=f"{base}/twilio/status",
+        status_callback_method="POST",
+        status_callback_event=["completed"],
+        timeout=30,
+    )
+    with db.connect() as conn:
+        db.create_call(conn, call.sid, lead_id)
+    print(f"Llamando a {telefono}... ({call.sid})")
+    print("Contesta y haz como que eres el negocio. Si tu cuenta de Twilio es de prueba,")
+    print("primero oirás un aviso en inglés: presiona cualquier tecla para que empiece el bot.")
+
+
 def cmd_simular(args: argparse.Namespace) -> None:
     """Conversa con el bot por texto, como si tú fueras el negocio. No hace llamadas reales."""
     from .agent import greeting, initial_history, make_agent
@@ -158,6 +204,12 @@ def main() -> None:
     s.add_argument("telefono")
     s.add_argument("--motivo", default="Agregado manualmente")
     s.set_defaults(func=cmd_no_llamar)
+
+    s = sub.add_parser("probar-llamada", help="Hacer una llamada de prueba a un número (ej. tu celular)")
+    s.add_argument("telefono")
+    s.add_argument("--negocio", default="Taquería El Güero", help="Negocio que vas a fingir ser")
+    s.add_argument("--contacto", default="")
+    s.set_defaults(func=cmd_probar_llamada)
 
     s = sub.add_parser("simular", help="Probar la conversación por texto, sin llamar")
     s.add_argument("--negocio", default="Taquería El Güero")
